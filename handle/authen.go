@@ -1,12 +1,14 @@
 package handle
 
 import (
+	"errors"
 	"fmt"
 	"goauth/middleware/database"
-	"goauth/model"
 	"goauth/middleware/jwt"
+	"goauth/model"
 	"html"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -108,4 +110,33 @@ func Login(c *gin.Context) {
   }
   
   c.JSON(http.StatusAccepted, map[string]string{"token": token})
+}
+
+func GetUserId(w http.ResponseWriter, r *http.Request) (string, error) {
+  var loginRequest struct {
+    Username string `json:"username" form:"username" binding:"required"`
+    Password string `json:"password" form:"password" binding:"required"`
+  }
+
+  loginRequest.Username, loginRequest.Password = r.FormValue("username"), r.FormValue("password")
+  if loginRequest.Username == "" || loginRequest.Password == "" {
+    return "", errors.New("Data cannot empty")
+  }
+
+  db, err := database.Connect()
+  if err != nil {
+    return "", err
+  }
+  
+  var databaseUser model.User
+  err = db.SQL.Table("users").Find(&databaseUser, "username = ?", loginRequest.Username).Error
+  if err != nil {
+    return "", err
+  }
+
+  if err = checkHashPassword(databaseUser.Password, loginRequest.Password); err != nil {
+    return "", err
+  }
+
+  return strconv.Itoa(databaseUser.Id), nil
 }

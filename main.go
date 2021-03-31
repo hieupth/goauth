@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -27,15 +28,23 @@ import (
 func main() {
   manager := manage.NewDefaultManager()
   manager.SetAuthorizeCodeTokenCfg(manage.DefaultAuthorizeCodeTokenCfg)
-  manager.MustTokenStorage(store.NewMemoryTokenStore())
+  manager.SetRefreshTokenCfg(manage.DefaultRefreshTokenCfg)
 
   clientStore := store.NewClientStore()
   manager.MapClientStorage(clientStore)
 
   server := oauth2server.NewDefaultServer(manager)
   server.SetAllowGetAccessRequest(true)
-  server.SetClientInfoHandler(oauth2server.ClientFormHandler)
-  manager.SetRefreshTokenCfg(manage.DefaultRefreshTokenCfg)
+  server.SetUserAuthorizationHandler(handle.GetUserId)
+  server.Config.AllowGetAccessRequest = true
+  server.Config.ForcePKCE = false
+  server.SetClientInfoHandler(func(r *http.Request) (string, string, error) {
+    clientId, clientSerect := r.FormValue("client_id"), r.FormValue("client_serect")
+    if clientId == "" || clientSerect == "" {
+      return "", "", errors.New("Data cannot empty")
+    }
+    return clientId, clientSerect, nil
+  })
 
   //setting token database
   DBType, ConnectionStr := database.GetConnectionString()
@@ -43,20 +52,39 @@ func main() {
   tokenStore := oauth2gorm.NewStore(storeConfig, 600)
   defer tokenStore.Close()
 
+  // manager.MustTokenStorage(store.NewMemoryTokenStore())
   manager.MapTokenStorage(tokenStore)
 
   router := gin.Default()
 
-  router.POST("/register", handle.RegisterUser)
+  router.GET("/login/oauth2/token", func(c *gin.Context) {
+    err := server.HandleTokenRequest(c.Writer, c.Request) 
+    if err != nil {
+      c.JSON(http.StatusBadRequest, map[string]string{"message": err.Error()})
+      return
+    }
+  })
 
+  router.POST("/register", handle.RegisterUser)
   router.POST("/login", handle.Login)
 
-  router.GET("/credentials", func(c *gin.Context) {
-    var requestData struct {
-      Domain string `json:"domain" form:"domain" binding:"required"`
-    }
-    if err := c.ShouldBindJSON(requestData); err != nil {
+
+  router.GET("/login/oauth2/authorize", func(c *gin.Context) {
+    err := server.HandleAuthorizeRequest(c.Writer, c.Request)
+    if err != nil {
       c.JSON(http.StatusBadRequest, map[string]string{"message": err.Error()})
+      return
+    }
+  })
+  
+  router.GET("/login/oauth2/callback", func(c *gin.Context) {
+    c.JSON(http.StatusOK, c.Request.FormValue("code"))
+  })
+
+  router.GET("/credentials", func(c *gin.Context) {
+    domain := c.Request.FormValue("domain")
+    if domain == "" {
+      c.JSON(http.StatusBadRequest, map[string]string{"message": "Data cannot empty"})
       return
     }
 
@@ -65,7 +93,7 @@ func main() {
     err := clientStore.Set(clientId, &models.Client{
       ID: clientId,
       Secret: clientSecret,
-      Domain: requestData.Domain,
+      Domain: domain,
     })
     if err != nil {
       fmt.Println(err.Error())
