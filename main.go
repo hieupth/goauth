@@ -7,21 +7,14 @@ import (
 
 	"goauth/handle"
 	"goauth/middleware/database"
-
-	// "goauth/middleware/generater"
-
-	// "github.com/google/uuid"
+	"goauth/middleware/key"
 
 	"github.com/gin-gonic/gin"
-	// "github.com/go-oauth2/oauth2/v4"
 	"github.com/go-oauth2/oauth2/v4/manage"
 	"github.com/go-oauth2/oauth2/v4/models"
-	"github.com/google/uuid"
-
-	// "github.com/go-oauth2/oauth2/v4/models"
-	"github.com/go-oauth2/oauth2/v4/store"
-
 	oauth2server "github.com/go-oauth2/oauth2/v4/server"
+	"github.com/go-oauth2/oauth2/v4/store"
+	"github.com/google/uuid"
 	"src.techknowlogick.com/oauth2-gorm"
 )
 
@@ -57,29 +50,9 @@ func main() {
 
   router := gin.Default()
 
-  router.GET("/login/oauth2/token", func(c *gin.Context) {
-    err := server.HandleTokenRequest(c.Writer, c.Request) 
-    if err != nil {
-      c.JSON(http.StatusBadRequest, map[string]string{"message": err.Error()})
-      return
-    }
-  })
 
   router.POST("/register", handle.RegisterUser)
   router.POST("/login", handle.Login)
-
-
-  router.GET("/login/oauth2/authorize", func(c *gin.Context) {
-    err := server.HandleAuthorizeRequest(c.Writer, c.Request)
-    if err != nil {
-      c.JSON(http.StatusBadRequest, map[string]string{"message": err.Error()})
-      return
-    }
-  })
-  
-  router.GET("/login/oauth2/callback", func(c *gin.Context) {
-    c.JSON(http.StatusOK, c.Request.FormValue("code"))
-  })
 
   router.GET("/credentials", func(c *gin.Context) {
     domain := c.Request.FormValue("domain")
@@ -88,9 +61,15 @@ func main() {
       return
     }
 
+    privateKey, _, err := key.RSAKeyGenerater()
+    if err != nil {
+      c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+      return
+    }
+
     clientId := uuid.New().String()[:8]
     clientSecret := uuid.New().String()[:8]
-    err := clientStore.Set(clientId, &models.Client{
+    err = clientStore.Set(clientId, &models.Client{
       ID: clientId,
       Secret: clientSecret,
       Domain: domain,
@@ -98,7 +77,36 @@ func main() {
     if err != nil {
       fmt.Println(err.Error())
     }
-    c.JSON(200, map[string]string{"CLIENT_ID": clientId, "CLIENT_SECRET": clientSecret})
+
+    c.JSON(200, map[string]string{"CLIENT_ID": clientId, "CLIENT_SECRET": clientSecret, "PRIVATE_KEY": privateKey})
+  })
+
+  router.GET("/oauth2/login", func(c *gin.Context) {
+    err := server.HandleAuthorizeRequest(c.Writer, c.Request)
+    if err != nil {
+      c.JSON(http.StatusBadRequest, map[string]string{"message": err.Error()})
+      return
+    }
+  })
+  
+  router.GET("/oauth2/callback", func(c *gin.Context) {
+    c.JSON(http.StatusOK, c.Request.FormValue("code"))
+  })
+
+  router.GET("/oauth2/token", func(c *gin.Context) {
+    err := server.HandleTokenRequest(c.Writer, c.Request) 
+    if err != nil {
+      c.JSON(http.StatusBadRequest, map[string]string{"message": err.Error()})
+      return
+    }
+  })
+
+  router.GET("oauth2/testValidate", func (c *gin.Context) {
+    _, err := server.ValidationBearerToken(c.Request)
+    if err != nil {
+      c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+      return
+    }
   })
   
   router.Run()
