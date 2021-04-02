@@ -9,7 +9,7 @@ import (
 	"fmt"
 )
 
-func RSAKeyGenerater() (string,string, error) {
+func RSAKeyGenerater() (string, string, error) {
   privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
   if err != nil {
     fmt.Println("Generate error: ", err.Error())
@@ -61,3 +61,6 @@ func ParseRsaPublicKeyFromPemStr(publicKeyPem string) (*rsa.PublicKey, error) {
   }
   return publicKey, nil
 }
+
+// func EnCode(data map[string]string, publicKey *rsa.PublicKey) (string, error) {
+// }

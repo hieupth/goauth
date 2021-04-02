@@ -2,12 +2,14 @@ package database
 
 import (
 	"fmt"
+	"goauth/model"
 	"log"
 	"os"
 
-	"github.com/joho/godotenv"
+	"golang.org/x/crypto/bcrypt"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
+	"github.com/joho/godotenv"
 	oauth2gorm "src.techknowlogick.com/oauth2-gorm"
 )
 
@@ -93,4 +95,27 @@ func Connect() (*DB, error) {
   }
 
   return &DB{SQL: db}, nil
+}
+
+func checkHashPassword(hashedPassword, password string) (error) {
+  return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+}
+
+func ValidateUser(username, password string) (int, error) {
+  db, err := Connect()
+  if err != nil {
+    return 0, err
+  }
+
+  var databaseUser model.User
+  err = db.SQL.Table("users").Find(&databaseUser, "username = ?", username).Error
+  if err != nil {
+    return 0, err
+  }
+
+  if err = checkHashPassword(databaseUser.Password, password); err != nil {
+    return 0, err
+  }
+
+  return databaseUser.Id, nil
 }
